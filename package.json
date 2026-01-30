@@ -1,0 +1,26 @@
+{
+  "name": "codepruner-sdk",
+  "version": "1.0.0",
+  "description": "Lightweight SDK to detect unused API endpoints in Express applications",
+  "main": "middleware.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "NODE_ENV=development node app.js",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "dead-code",
+    "unused-endpoints",
+    "api-tracking",
+    "express-middleware",
+    "monitoring"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
