@@ -127,13 +127,62 @@ const endpointStatusSchema = new mongoose.Schema(
 endpointStatusSchema.index({ projectId: 1, route: 1 });
 endpointStatusSchema.index({ projectId: 1, status: 1 });
 
+// User Schema - stores auth users
+const userSchema = new mongoose.Schema(
+  {
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      lowercase: true,
+      trim: true
+    },
+    passwordHash: {
+      type: String,
+      required: true
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false
+    },
+    verificationToken: {
+      type: String,
+      default: null
+    },
+    resetPasswordToken: {
+      type: String,
+      default: null
+    },
+    resetPasswordExpires: {
+      type: Date,
+      default: null
+    },
+    failedLoginAttempts: {
+      type: Number,
+      default: 0
+    },
+    accountLockedUntil: {
+      type: Date,
+      default: null
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  { timestamps: false }
+);
+
 // Models
 const Project = mongoose.model('Project', projectSchema);
 const EndpointLog = mongoose.model('EndpointLog', endpointLogSchema);
 const EndpointStatus = mongoose.model('EndpointStatus', endpointStatusSchema);
+const User = mongoose.model('User', userSchema);
 
 module.exports = {
   Project,
   EndpointLog,
-  EndpointStatus
+  EndpointStatus,
+  User
 };

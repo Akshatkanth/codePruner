@@ -5,25 +5,58 @@
 
 require('dotenv').config();
 const express = require('express');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const connectDB = require('./db');
 const validateAPIKey = require('./middleware');
-const { EndpointLog, EndpointStatus } = require('./models');
-const { validateTrackingPayload } = require('./validators');
+const { EndpointLog, EndpointStatus, User } = require('./models');
+const { validateTrackingPayload, validatePassword } = require('./validators');
 const { scheduleCronJob, analyzeProject } = require('./cron-analyzer');
+const authMiddleware = require('./auth-middleware');
 
 const app = express();
 
-// CORS Middleware
+// Rate limiting for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per window
+  message: { error: 'Too many attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute
+  message: { error: 'Too many requests' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// CORS Middleware with whitelist
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = process.env.CORS_ORIGINS 
+    ? process.env.CORS_ORIGINS.split(',') 
+    : ['http://localhost:3000'];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
   
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
   next();
 });
+
+// Apply general rate limiting to all routes
+app.use(generalLimiter);
 
 // Middleware
 app.use(express.json({ limit: '10mb' })); // Support larger payloads
@@ -40,6 +73,224 @@ setTimeout(() => {
 // Health check endpoint (no auth required)
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'CodePruner API' });
+});
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
+ * POST /auth/signup
+ * Create a new user
+ */
+app.post('/auth/signup', authLimiter, async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Invalid input' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({ error: 'Invalid email' });
+    }
+
+    // Validate password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ error: passwordValidation.error });
+    }
+
+    const existingUser = await User.findOne({ email: normalizedEmail }).select('_id');
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email already in use' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
+    await User.create({
+      email: normalizedEmail,
+      passwordHash,
+      verificationToken,
+      emailVerified: false // In production, send verification email
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully'
+    });
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /auth/login
+ * Authenticate user and return JWT
+ */
+app.post('/auth/login', authLimiter, async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Invalid input' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail })
+      .select('_id passwordHash failedLoginAttempts accountLockedUntil');
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Check if account is locked
+    if (user.accountLockedUntil && user.accountLockedUntil > new Date()) {
+      const remainingMinutes = Math.ceil((user.accountLockedUntil - new Date()) / 60000);
+      return res.status(423).json({ 
+        error: `Account locked. Try again in ${remainingMinutes} minutes` 
+      });
+    }
+
+    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!passwordMatch) {
+      // Increment failed attempts
+      const failedAttempts = (user.failedLoginAttempts || 0) + 1;
+      const updates = { failedLoginAttempts: failedAttempts };
+
+      // Lock account after 5 failed attempts for 15 minutes
+      if (failedAttempts >= 5) {
+        updates.accountLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      }
+
+      await User.updateOne({ _id: user._id }, updates);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Reset failed attempts on successful login
+    if (user.failedLoginAttempts > 0 || user.accountLockedUntil) {
+      await User.updateOne({ _id: user._id }, {
+        failedLoginAttempts: 0,
+        accountLockedUntil: null
+      });
+    }
+
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      return res.status(500).json({ error: 'JWT secret not configured' });
+    }
+
+    const token = jwt.sign({ userId: user._id.toString() }, secret, { expiresIn: '24h' });
+
+    res.json({
+      token,
+      expiresIn: 86400 // 24 hours in seconds
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /auth/forgot-password
+ * Request password reset
+ */
+app.post('/auth/forgot-password', authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body || {};
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail }).select('_id');
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      return res.json({ 
+        success: true, 
+        message: 'If the email exists, a reset link will be sent' 
+      });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await User.updateOne({ _id: user._id }, {
+      resetPasswordToken: resetToken,
+      resetPasswordExpires: resetExpires
+    });
+
+    // In production: Send email with resetToken
+    // For now, return token in response (remove in production!)
+    res.json({
+      success: true,
+      message: 'If the email exists, a reset link will be sent',
+      resetToken // REMOVE THIS IN PRODUCTION
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /auth/reset-password
+ * Reset password using token
+ */
+app.post('/auth/reset-password', authLimiter, async (req, res) => {
+  try {
+    const { token, newPassword } = req.body || {};
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ error: passwordValidation.error });
+    }
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: new Date() }
+    }).select('_id');
+
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    await User.updateOne({ _id: user._id }, {
+      passwordHash,
+      resetPasswordToken: null,
+      resetPasswordExpires: null,
+      failedLoginAttempts: 0,
+      accountLockedUntil: null
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 /**
@@ -97,7 +348,7 @@ app.post('/track', validateAPIKey, async (req, res) => {
  * GET /projects/:projectId/endpoints
  * Get all endpoints for a project with their status
  */
-app.get('/projects/:projectId/endpoints', validateAPIKey, async (req, res) => {
+app.get('/projects/:projectId/endpoints', authMiddleware, validateAPIKey, async (req, res) => {
   try {
     const projectId = req.params.projectId;
 
@@ -146,7 +397,7 @@ app.get('/projects/:projectId/endpoints', validateAPIKey, async (req, res) => {
  * GET /projects/:projectId/endpoints/status/:statusType
  * Get endpoints filtered by status (dead, risky, active)
  */
-app.get('/projects/:projectId/endpoints/status/:statusType', validateAPIKey, async (req, res) => {
+app.get('/projects/:projectId/endpoints/status/:statusType', authMiddleware, validateAPIKey, async (req, res) => {
   try {
     const projectId = req.params.projectId;
     const statusType = req.params.statusType.toLowerCase();
@@ -194,7 +445,7 @@ app.get('/projects/:projectId/endpoints/status/:statusType', validateAPIKey, asy
  * GET /projects/:projectId/endpoints/summary
  * Get summary statistics for project endpoints
  */
-app.get('/projects/:projectId/endpoints/summary', validateAPIKey, async (req, res) => {
+app.get('/projects/:projectId/endpoints/summary', authMiddleware, validateAPIKey, async (req, res) => {
   try {
     const projectId = req.params.projectId;
 
@@ -242,7 +493,7 @@ app.get('/projects/:projectId/endpoints/summary', validateAPIKey, async (req, re
  * GET /analysis/:projectId
  * Get endpoint analysis results for a project (backward compatibility)
  */
-app.get('/analysis/:projectId', validateAPIKey, async (req, res) => {
+app.get('/analysis/:projectId', authMiddleware, validateAPIKey, async (req, res) => {
   try {
     const projectId = req.params.projectId;
 
@@ -282,7 +533,7 @@ app.get('/analysis/:projectId', validateAPIKey, async (req, res) => {
  * POST /analysis/run-now/:projectId
  * Manually trigger analysis for a project (for testing)
  */
-app.post('/analysis/run-now/:projectId', validateAPIKey, async (req, res) => {
+app.post('/analysis/run-now/:projectId', authMiddleware, validateAPIKey, async (req, res) => {
   try {
     const projectId = req.params.projectId;
 

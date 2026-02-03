@@ -1,222 +1,84 @@
-'use client';
-
-import { useState, useEffect } from 'react';
 import styles from './page.module.css';
 
-interface Endpoint {
-  _id: string;
-  method: string;
-  route: string;
-  status: 'dead' | 'risky' | 'active';
-  callCount: number;
-  lastCalledAt: string | null;
-}
-
-interface EndpointData {
-  projectId: string;
-  total: number;
-  dead: number;
-  risky: number;
-  active: number;
-  endpoints: Endpoint[];
-}
-
-export default function Dashboard() {
-  const [data, setData] = useState<EndpointData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [configured, setConfigured] = useState(false);
-
-  const formatRelativeTime = (dateString: string | null) => {
-    if (!dateString) return 'Never';
-    
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffSecs = Math.floor(diffMs / 1000);
-    const diffMins = Math.floor(diffSecs / 60);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffSecs < 60) return `${diffSecs}s ago`;
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 30) return `${diffDays}d ago`;
-    
-    return date.toLocaleDateString();
-  };
-
-  const fetchEndpoints = async () => {
-    if (!projectId || !apiKey) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`http://localhost:5000/projects/${projectId}/endpoints`, {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      setData(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfigure = (e: React.FormEvent) => {
-    e.preventDefault();
-    setConfigured(true);
-    fetchEndpoints();
-  };
-
-  useEffect(() => {
-    if (configured) {
-      fetchEndpoints();
-      const interval = setInterval(fetchEndpoints, 30000); // Refresh every 30s
-      return () => clearInterval(interval);
-    }
-  }, [configured, projectId, apiKey]);
-
-  if (!configured) {
-    return (
-      <div className={styles.container}>
-        <main className={styles.main}>
-          <h1 className={styles.title}>CodePruner Dashboard</h1>
-          <p className={styles.description}>Configure your API credentials</p>
-          
-          <form onSubmit={handleConfigure} className={styles.configForm}>
-            <div className={styles.inputGroup}>
-              <label htmlFor="projectId">Project ID</label>
-              <input
-                id="projectId"
-                type="text"
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                placeholder="697f70e806699212b4bd0548"
-                required
-              />
-            </div>
-            
-            <div className={styles.inputGroup}>
-              <label htmlFor="apiKey">API Key</label>
-              <input
-                id="apiKey"
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="cp_xxxxx"
-                required
-              />
-            </div>
-            
-            <button type="submit" className={styles.button}>
-              Connect
-            </button>
-          </form>
-        </main>
-      </div>
-    );
-  }
-
-  if (loading && !data) {
-    return (
-      <div className={styles.container}>
-        <main className={styles.main}>
-          <div className={styles.loading}>Loading...</div>
-        </main>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={styles.container}>
-        <main className={styles.main}>
-          <div className={styles.error}>Error: {error}</div>
-          <button onClick={() => setConfigured(false)} className={styles.button}>
-            Reconfigure
-          </button>
-        </main>
-      </div>
-    );
-  }
-
+export default function Home() {
   return (
-    <div className={styles.container}>
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div className={styles.brand}>CodePruner</div>
+        <a className={styles.headerCta} href="/signup">
+          Get Started Free
+        </a>
+      </header>
+
       <main className={styles.main}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>CodePruner Dashboard</h1>
-          <button onClick={() => setConfigured(false)} className={styles.buttonSmall}>
-            Change Credentials
-          </button>
-        </div>
+        <section className={styles.hero}>
+          <h1 className={styles.heroTitle}>
+            Find dead API endpoints before you delete the wrong code.
+          </h1>
+          <p className={styles.heroSubhead}>
+            CodePruner helps developers automatically detect dead API endpoints using real
+            production traffic so they can clean up code safely and faster.
+          </p>
+          <div className={styles.heroActions}>
+            <a className={styles.primaryButton} href="/signup">
+              Get Started Free
+            </a>
+            <span className={styles.noCard}>No credit card required</span>
+          </div>
+        </section>
 
-        {data && (
-          <>
-            <div className={styles.summary}>
-              <div className={styles.statCard}>
-                <div className={styles.statValue}>{data.total}</div>
-                <div className={styles.statLabel}>Total Endpoints</div>
-              </div>
-              <div className={`${styles.statCard} ${styles.statDead}`}>
-                <div className={styles.statValue}>{data.dead}</div>
-                <div className={styles.statLabel}>Dead</div>
-              </div>
-              <div className={`${styles.statCard} ${styles.statRisky}`}>
-                <div className={styles.statValue}>{data.risky}</div>
-                <div className={styles.statLabel}>Risky</div>
-              </div>
-              <div className={`${styles.statCard} ${styles.statActive}`}>
-                <div className={styles.statValue}>{data.active}</div>
-                <div className={styles.statLabel}>Active</div>
-              </div>
-            </div>
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>The problem</h2>
+          <p className={styles.sectionText}>
+            Unused API endpoints pile up quietly. Teams stop knowing what is safe to remove,
+            and the fear of deleting production code slows every cleanup. Legacy APIs linger,
+            and systems grow bloated.
+          </p>
+        </section>
 
-            <div className={styles.tableContainer}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Status</th>
-                    <th>Method</th>
-                    <th>Route</th>
-                    <th>Calls</th>
-                    <th>Last Called</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.endpoints.map((endpoint) => (
-                    <tr key={endpoint._id} className={styles[`row-${endpoint.status}`]}>
-                      <td>
-                        <span className={`${styles.badge} ${styles[`badge-${endpoint.status}`]}`}>
-                          {endpoint.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={styles.method}>{endpoint.method}</span>
-                      </td>
-                      <td className={styles.route}>{endpoint.route}</td>
-                      <td>{endpoint.callCount}</td>
-                      <td className={styles.time}>
-                        {formatRelativeTime(endpoint.lastCalledAt)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>How it works</h2>
+          <div className={styles.steps}>
+            <div className={styles.stepCard}>
+              <div className={styles.stepNumber}>1</div>
+              <h3 className={styles.stepTitle}>Install lightweight SDK</h3>
+              <p className={styles.stepText}>Add a single middleware and start observing traffic.</p>
             </div>
-          </>
-        )}
+            <div className={styles.stepCard}>
+              <div className={styles.stepNumber}>2</div>
+              <h3 className={styles.stepTitle}>Track real API usage</h3>
+              <p className={styles.stepText}>Capture production calls without impacting performance.</p>
+            </div>
+            <div className={styles.stepCard}>
+              <div className={styles.stepNumber}>3</div>
+              <h3 className={styles.stepTitle}>See dead, risky, active</h3>
+              <p className={styles.stepText}>The dashboard labels endpoints so you can prune safely.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Product preview</h2>
+          <div className={styles.previewGrid}>
+            <div className={styles.previewBox}>Dashboard screenshot placeholder</div>
+            <ul className={styles.previewList}>
+              <li>No performance impact</li>
+              <li>Uses real traffic</li>
+              <li>Read-only analysis</li>
+            </ul>
+          </div>
+        </section>
+
+        <section className={styles.finalCta}>
+          <h2 className={styles.sectionTitle}>Start pruning with confidence</h2>
+          <p className={styles.sectionText}>
+            Know exactly what is safe to remove before you touch production code.
+          </p>
+          <a className={styles.primaryButton} href="/signup">
+            Get Started Free
+          </a>
+          <div className={styles.noCard}>No credit card required</div>
+        </section>
       </main>
     </div>
   );

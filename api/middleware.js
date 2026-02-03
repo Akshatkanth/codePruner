@@ -6,20 +6,20 @@ const { Project } = require('./models');
 
 async function validateAPIKey(req, res, next) {
   try {
+    const apiKeyHeader = req.headers['x-api-key'];
     const authHeader = req.headers['authorization'];
 
-    if (!authHeader) {
-      return res.status(401).json({
-        error: 'Missing Authorization header'
-      });
-    }
+    let token = '';
 
-    // Extract Bearer token
-    const token = authHeader.replace('Bearer ', '').trim();
+    if (apiKeyHeader && typeof apiKeyHeader === 'string') {
+      token = apiKeyHeader.trim();
+    } else if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      token = authHeader.replace('Bearer ', '').trim();
+    }
 
     if (!token) {
       return res.status(401).json({
-        error: 'Invalid Authorization format. Use: Bearer <api-key>'
+        error: 'Missing API key. Use X-API-Key or Authorization: Bearer <api-key>'
       });
     }
 
