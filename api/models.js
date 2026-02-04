@@ -12,6 +12,12 @@ const projectSchema = new mongoose.Schema(
       required: true,
       trim: true
     },
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true
+    },
     apiKey: {
       type: String,
       required: true,
@@ -141,6 +147,12 @@ const userSchema = new mongoose.Schema(
     passwordHash: {
       type: String,
       required: true
+    },
+    plan: {
+      type: String,
+      enum: ['free', 'pro'],
+      default: 'free',
+      index: true
     },
     emailVerified: {
       type: Boolean,

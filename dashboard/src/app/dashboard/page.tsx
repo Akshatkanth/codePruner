@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import styles from './page.module.css';
 
 interface Endpoint {
@@ -21,6 +21,13 @@ interface EndpointData {
   endpoints: Endpoint[];
 }
 
+interface OnboardingProgress {
+  hasProjects: boolean;
+  hasUsageLogs: boolean;
+  hasEndpointStatus: boolean;
+  isComplete: boolean;
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<EndpointData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,12 +36,23 @@ export default function Dashboard() {
   const [apiKey, setApiKey] = useState('');
   const [authToken, setAuthToken] = useState('');
   const [configured, setConfigured] = useState(false);
+  const [onboarding, setOnboarding] = useState<OnboardingProgress | null>(null);
+  const [showCredentials, setShowCredentials] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // Load token from localStorage on mount
   useEffect(() => {
     const token = localStorage.getItem('authToken');
+    const savedProjectId = localStorage.getItem('currentProjectId');
+    const savedApiKey = localStorage.getItem('currentApiKey');
+
     if (token) {
       setAuthToken(token);
+    }
+
+    if (savedProjectId && savedApiKey && token) {
+      setProjectId(savedProjectId);
+      setApiKey(savedApiKey);
+      setConfigured(true);
     }
   }, []);
 
@@ -55,6 +73,25 @@ export default function Dashboard() {
     if (diffDays < 30) return `${diffDays}d ago`;
 
     return date.toLocaleDateString();
+  };
+
+  const fetchOnboardingProgress = async () => {
+    if (!authToken) return;
+
+    try {
+      const response = await fetch('http://localhost:5000/onboarding/progress', {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setOnboarding(result);
+      }
+    } catch (err) {
+      console.error('Failed to fetch onboarding progress:', err);
+    }
   };
 
   const fetchEndpoints = async () => {
@@ -90,10 +127,27 @@ export default function Dashboard() {
     fetchEndpoints();
   };
 
+  const copyToClipboard = (value: string, field: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleRefreshNow = () => {
+    if (configured) {
+      fetchEndpoints();
+      fetchOnboardingProgress();
+    }
+  };
+
   useEffect(() => {
     if (configured) {
       fetchEndpoints();
-      const interval = setInterval(fetchEndpoints, 30000); // Refresh every 30s
+      fetchOnboardingProgress();
+      const interval = setInterval(() => {
+        fetchEndpoints();
+        fetchOnboardingProgress();
+      }, 30000);
       return () => clearInterval(interval);
     }
   }, [configured, projectId, apiKey, authToken]);
@@ -179,12 +233,134 @@ export default function Dashboard() {
       <main className={styles.main}>
         <div className={styles.header}>
           <h1 className={styles.title}>CodePruner Dashboard</h1>
-          <button onClick={() => setConfigured(false)} className={styles.buttonSmall}>
-            Change Credentials
-          </button>
+          <div className={styles.headerActions}>
+            <a href="/" className={styles.buttonSmall}>
+              Home
+            </a>
+            <button onClick={handleRefreshNow} className={styles.buttonSmall}>
+              🔄 Refresh
+            </button>
+            <button onClick={() => setShowCredentials(!showCredentials)} className={styles.buttonSmall}>
+              {showCredentials ? 'Hide Credentials' : 'Show Credentials'}
+            </button>
+            <button onClick={() => setConfigured(false)} className={styles.buttonSmall}>
+              Change Credentials
+            </button>
+          </div>
         </div>
 
-        {data && (
+        {showCredentials && (
+          <div className={styles.credentialsPanel}>
+            <h3 className={styles.credentialsTitle}>Your Credentials</h3>
+            <div className={styles.credentialsList}>
+              <div className={styles.credentialItem}>
+                <label>Project ID</label>
+                <div className={styles.credentialField}>
+                  <span>{projectId}</span>
+                  <button
+                    onClick={() => copyToClipboard(projectId, 'projectId')}
+                    className={styles.copyButton}
+                    title="Copy to clipboard"
+                  >
+                    {copiedField === 'projectId' ? '✓ Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              <div className={styles.credentialItem}>
+                <label>API Key</label>
+                <div className={styles.credentialField}>
+                  <span className={styles.secret}>{apiKey}</span>
+                  <button
+                    onClick={() => copyToClipboard(apiKey, 'apiKey')}
+                    className={styles.copyButton}
+                    title="Copy to clipboard"
+                  >
+                    {copiedField === 'apiKey' ? '✓ Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              <div className={styles.credentialItem}>
+                <label>Auth Token (JWT)</label>
+                <div className={styles.credentialField}>
+                  <span className={styles.secret}>{authToken.substring(0, 20)}...</span>
+                  <button
+                    onClick={() => copyToClipboard(authToken, 'authToken')}
+                    className={styles.copyButton}
+                    title="Copy to clipboard"
+                  >
+                    {copiedField === 'authToken' ? '✓ Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {onboarding && !onboarding.isComplete && (
+          <div className={styles.onboarding}>
+            <h2 className={styles.onboardingTitle}>Getting Started</h2>
+            <div className={styles.checklistSteps}>
+              <div className={`${styles.step} ${onboarding.hasProjects ? styles.stepComplete : ''}`}>
+                <div className={styles.stepNumber}>{onboarding.hasProjects ? '✓' : '1'}</div>
+                <div className={styles.stepContent}>
+                  <div className={styles.stepTitle}>Create a Project</div>
+                  <div className={styles.stepDesc}>
+                    {onboarding.hasProjects
+                      ? 'Project created successfully'
+                      : 'Go to Projects page to create your first project'}
+                  </div>
+                </div>
+              </div>
+
+              <div className={`${styles.step} ${onboarding.hasUsageLogs ? styles.stepComplete : ''}`}>
+                <div className={styles.stepNumber}>{onboarding.hasUsageLogs ? '✓' : '2'}</div>
+                <div className={styles.stepContent}>
+                  <div className={styles.stepTitle}>Install SDK</div>
+                  <div className={styles.stepDesc}>
+                    {onboarding.hasUsageLogs
+                      ? 'SDK is tracking your endpoints'
+                      : 'Add CodePruner middleware to your Express app and make some requests'}
+                  </div>
+                </div>
+              </div>
+
+              <div className={`${styles.step} ${onboarding.hasEndpointStatus ? styles.stepComplete : ''}`}>
+                <div className={styles.stepNumber}>{onboarding.hasEndpointStatus ? '✓' : '3'}</div>
+                <div className={styles.stepContent}>
+                  <div className={styles.stepTitle}>See Results</div>
+                  <div className={styles.stepDesc}>
+                    {onboarding.hasEndpointStatus
+                      ? 'Analysis complete - view your results below'
+                      : 'Analysis runs daily at 2 AM or trigger it manually via API'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loading && (!data || data.endpoints.length === 0) && (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>📊</div>
+            <h2 className={styles.emptyTitle}>No Data Yet</h2>
+            <p className={styles.emptyDesc}>
+              {!onboarding?.hasProjects && 'Create a project to get started.'}
+              {onboarding?.hasProjects && !onboarding?.hasUsageLogs &&
+                'Install the SDK in your Express app and make some API requests.'}
+              {onboarding?.hasUsageLogs && !onboarding?.hasEndpointStatus &&
+                'Analysis will run automatically at 2 AM daily. Or trigger it manually via POST /analysis/run-now/:projectId'}
+            </p>
+            {!onboarding?.hasProjects && (
+              <a href="/projects" className={styles.button}>
+                Go to Projects
+              </a>
+            )}
+          </div>
+        )}
+
+        {data && data.endpoints.length > 0 && (
           <>
             <div className={styles.summary}>
               <div className={styles.statCard}>

@@ -43,8 +43,8 @@ export default function Login() {
       // Store token in localStorage
       localStorage.setItem('authToken', data.token);
       
-      // Redirect to dashboard
-      router.push('/dashboard');
+      // Redirect to projects page
+      router.push('/projects');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -54,6 +54,9 @@ export default function Login() {
 
   return (
     <div className={styles.page}>
+      <a href="/" className={styles.homeLink}>
+        ← Home
+      </a>
       <div className={styles.container}>
         <div className={styles.card}>
           <h1 className={styles.title}>Welcome back</h1>

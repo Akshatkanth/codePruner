@@ -3,6 +3,7 @@
  */
 
 const express = require('express');
+require('dotenv').config();
 const CodePruner = require('./middleware');
 
 const app = express();
@@ -11,10 +12,10 @@ app.use(express.json());
 // Initialize CodePruner
 const codePruner = new CodePruner({
   apiKey: process.env.CP_API_KEY || 'your-api-key-here',
-  apiEndpoint: 'https://api.codepruner.com/track', // Your tracking endpoint
-  enabled: true, // Can be disabled via CP_ENABLED=false
-  excludedRoutes: ['/health', '/metrics'], // Routes to exclude from tracking
-  debug: process.env.NODE_ENV !== 'production' // Enable debug logs in non-production
+  apiEndpoint: process.env.CP_API_ENDPOINT || 'http://localhost:5000/track',
+  enabled: process.env.CP_ENABLED !== 'false',
+  excludedRoutes: ['/health', '/metrics'],
+  debug: process.env.NODE_ENV !== 'production'
 });
 
 // Apply middleware globally

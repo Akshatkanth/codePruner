@@ -11,7 +11,7 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const connectDB = require('./db');
 const validateAPIKey = require('./middleware');
-const { EndpointLog, EndpointStatus, User } = require('./models');
+const { EndpointLog, EndpointStatus, User, Project } = require('./models');
 const { validateTrackingPayload, validatePassword } = require('./validators');
 const { scheduleCronJob, analyzeProject } = require('./cron-analyzer');
 const authMiddleware = require('./auth-middleware');
@@ -294,6 +294,53 @@ app.post('/auth/reset-password', authLimiter, async (req, res) => {
 });
 
 /**
+ * GET /onboarding/progress
+ * Get onboarding checklist progress for authenticated user
+ */
+app.get('/onboarding/progress', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Step 1: Check if user has any projects
+    const projectCount = await Project.countDocuments({ owner: userId, active: true });
+    const hasProjects = projectCount > 0;
+
+    // Step 2: Check if any usage logs exist for user's projects
+    let hasUsageLogs = false;
+    if (hasProjects) {
+      const userProjects = await Project.find({ owner: userId, active: true }).select('_id');
+      const projectIds = userProjects.map(p => p._id.toString());
+      const logCount = await EndpointLog.countDocuments({ 
+        projectId: { $in: projectIds } 
+      });
+      hasUsageLogs = logCount > 0;
+    }
+
+    // Step 3: Check if endpoint status data exists (analysis has run)
+    let hasEndpointStatus = false;
+    if (hasUsageLogs) {
+      const userProjects = await Project.find({ owner: userId, active: true }).select('_id');
+      const projectIds = userProjects.map(p => p._id.toString());
+      const statusCount = await EndpointStatus.countDocuments({ 
+        projectId: { $in: projectIds } 
+      });
+      hasEndpointStatus = statusCount > 0;
+    }
+
+    res.json({
+      hasProjects,
+      hasUsageLogs,
+      hasEndpointStatus,
+      isComplete: hasProjects && hasUsageLogs && hasEndpointStatus
+    });
+
+  } catch (error) {
+    console.error('Onboarding progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * POST /track
  * Accept and store endpoint usage logs
  */
@@ -313,8 +360,44 @@ app.post('/track', validateAPIKey, async (req, res) => {
     // Normalize to array
     const items = Array.isArray(payload) ? payload : [payload];
 
+    // Check endpoint limit for free users
+    let logsToInsert = items;
+    const project = req.project;
+    
+    if (project.owner) {
+      const user = await User.findById(project.owner);
+      
+      if (user && user.plan === 'free') {
+        // Get current unique endpoint count for this project
+        const currentEndpoints = await EndpointLog.distinct('route', { projectId });
+        const uniqueRoutesInRequest = [...new Set(items.map(item => item.route))];
+        
+        // Filter out routes that would exceed the 50 endpoint limit
+        const newRoutes = uniqueRoutesInRequest.filter(
+          route => !currentEndpoints.includes(route)
+        );
+        
+        const availableSlots = 50 - currentEndpoints.length;
+        
+        if (newRoutes.length > availableSlots) {
+          // Only allow logging of endpoints up to the limit
+          const allowedNewRoutes = newRoutes.slice(0, availableSlots);
+          logsToInsert = items.filter(
+            item => currentEndpoints.includes(item.route) || allowedNewRoutes.includes(item.route)
+          );
+          
+          if (logsToInsert.length < items.length) {
+            console.warn(
+              `Free user ${user.email} hit endpoint limit. ` +
+              `Allowed ${logsToInsert.length}/${items.length} logs`
+            );
+          }
+        }
+      }
+    }
+
     // Prepare logs for insertion
-    const logs = items.map(item => ({
+    const logs = logsToInsert.map(item => ({
       projectId,
       method: item.method.toUpperCase(),
       route: item.route,
@@ -324,10 +407,12 @@ app.post('/track', validateAPIKey, async (req, res) => {
     }));
 
     // Insert logs (fire and forget - no confirmation wait)
-    EndpointLog.insertMany(logs, { ordered: false }).catch(error => {
-      // Log errors but don't block response
-      console.error('Error inserting logs:', error.message);
-    });
+    if (logs.length > 0) {
+      EndpointLog.insertMany(logs, { ordered: false }).catch(error => {
+        // Log errors but don't block response
+        console.error('Error inserting logs:', error.message);
+      });
+    }
 
     // Return immediately (don't wait for DB insert)
     res.status(202).json({
@@ -556,6 +641,124 @@ app.post('/analysis/run-now/:projectId', authMiddleware, validateAPIKey, async (
     res.status(500).json({
       error: 'Internal server error'
     });
+  }
+});
+
+/**
+ * POST /projects
+ * Create a new project for the logged-in user
+ */
+app.post('/projects', authMiddleware, async (req, res) => {
+  try {
+    const { name, description } = req.body || {};
+    const userId = req.user.userId;
+
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Project name is required' });
+    }
+
+    if (name.trim().length < 3) {
+      return res.status(400).json({ error: 'Project name must be at least 3 characters' });
+    }
+
+    // Get user plan
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check project limit for free users
+    if (user.plan === 'free') {
+      const projectCount = await Project.countDocuments({ owner: userId });
+      if (projectCount >= 1) {
+        return res.status(403).json({ 
+          error: 'Free plan limited to 1 project. Upgrade to Pro for unlimited projects.' 
+        });
+      }
+    }
+
+    // Generate secure API key and secret
+    const apiKey = 'cp_' + crypto.randomBytes(32).toString('hex');
+    const apiSecret = crypto.randomBytes(32).toString('hex');
+
+    const project = await Project.create({
+      name: name.trim(),
+      owner: userId,
+      apiKey,
+      apiSecret,
+      description: description || '',
+      active: true
+    });
+
+    res.status(201).json({
+      success: true,
+      project: {
+        id: project._id,
+        name: project.name,
+        apiKey: project.apiKey,
+        description: project.description,
+        createdAt: project.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create project error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /projects
+ * Get all projects owned by the logged-in user
+ */
+app.get('/projects', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const projects = await Project.find({ owner: userId, active: true })
+      .select('name apiKey description createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      projects: projects.map(p => ({
+        id: p._id,
+        name: p.name,
+        apiKey: p.apiKey,
+        description: p.description,
+        createdAt: p.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('Get projects error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * DELETE /projects/:projectId
+ * Soft delete a project (set active to false)
+ */
+app.delete('/projects/:projectId', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const projectId = req.params.projectId;
+
+    const project = await Project.findOne({ _id: projectId, owner: userId });
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    await Project.updateOne({ _id: projectId }, { active: false });
+
+    res.json({
+      success: true,
+      message: 'Project deleted'
+    });
+  } catch (error) {
+    console.error('Delete project error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

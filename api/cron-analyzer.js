@@ -4,7 +4,50 @@
  */
 
 const cron = require('node-cron');
-const { EndpointLog, EndpointStatus, Project } = require('./models');
+const { EndpointLog, EndpointStatus, Project, User } = require('./models');
+
+/**
+ * Clean old logs based on user plan
+ * Free: 30 days, Pro: 90 days
+ */
+async function cleanOldLogs() {
+  try {
+    console.log('  🧹 Cleaning old logs based on plan...');
+    
+    // Get all active projects with their owners
+    const projects = await Project.find({ active: true }).populate('owner');
+    
+    let deletedCount = 0;
+
+    for (const project of projects) {
+      if (!project.owner) continue;
+
+      const retentionDays = project.owner.plan === 'pro' ? 90 : 30;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+
+      // Delete logs older than cutoff date
+      const result = await EndpointLog.deleteMany({
+        projectId: project._id,
+        timestamp: { $lt: cutoffDate }
+      });
+
+      if (result.deletedCount > 0) {
+        deletedCount += result.deletedCount;
+        console.log(
+          `     Deleted ${result.deletedCount} logs for project "${project.name}" ` +
+          `(${project.owner.plan} plan, retention: ${retentionDays} days)`
+        );
+      }
+    }
+
+    if (deletedCount > 0) {
+      console.log(`  ✅ Deleted ${deletedCount} total old log(s)`);
+    }
+  } catch (error) {
+    console.error('  ❌ Error cleaning old logs:', error.message);
+  }
+}
 
 /**
  * Analyze endpoints for a specific project
@@ -107,7 +150,13 @@ async function analyzeProject(projectId) {
  */
 async function runDailyAnalysis() {
   try {
-    console.log(`\n📊 Starting daily endpoint analysis (${new Date().toISOString()})`);
+    console.log(`\n📊 Starting daily maintenance job (${new Date().toISOString()})`);
+
+    // Step 1: Clean old logs based on plan
+    await cleanOldLogs();
+
+    // Step 2: Run endpoint analysis
+    console.log('  📈 Running endpoint analysis...');
 
     // Get all active projects
     const projects = await Project.find({ active: true });
@@ -117,7 +166,7 @@ async function runDailyAnalysis() {
       return;
     }
 
-    console.log(`  Found ${projects.length} active project(s)\n`);
+    console.log(`  Found ${projects.length} active project(s)`);
 
     let totalEndpoints = 0;
 
@@ -128,9 +177,9 @@ async function runDailyAnalysis() {
       totalEndpoints += count;
     }
 
-    console.log(`\n✅ Analysis complete. Total endpoints analyzed: ${totalEndpoints}\n`);
+    console.log(`✅ Daily maintenance complete. Total endpoints analyzed: ${totalEndpoints}\n`);
   } catch (error) {
-    console.error('❌ Daily analysis error:', error);
+    console.error('❌ Daily maintenance error:', error);
   }
 }
 
@@ -158,5 +207,6 @@ async function runAnalysisNow() {
 module.exports = {
   scheduleCronJob,
   runAnalysisNow,
-  analyzeProject
+  analyzeProject,
+  cleanOldLogs
 };

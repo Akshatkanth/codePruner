@@ -1,13 +1,29 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import styles from './page.module.css';
 
 export default function Home() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('authToken');
+    setIsLoggedIn(!!token);
+  }, []);
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.brand}>CodePruner</div>
-        <a className={styles.headerCta} href="/signup">
-          Get Started Free
-        </a>
+        {isLoggedIn ? (
+          <a className={styles.headerCta} href="/projects">
+            Go to Projects
+          </a>
+        ) : (
+          <a className={styles.headerCta} href="/signup">
+            Get Started Free
+          </a>
+        )}
       </header>
 
       <main className={styles.main}>
@@ -20,10 +36,18 @@ export default function Home() {
             production traffic so they can clean up code safely and faster.
           </p>
           <div className={styles.heroActions}>
-            <a className={styles.primaryButton} href="/signup">
-              Get Started Free
-            </a>
-            <span className={styles.noCard}>No credit card required</span>
+            {isLoggedIn ? (
+              <a className={styles.primaryButton} href="/projects">
+                Go to Projects
+              </a>
+            ) : (
+              <>
+                <a className={styles.primaryButton} href="/signup">
+                  Get Started Free
+                </a>
+                <span className={styles.noCard}>No credit card required</span>
+              </>
+            )}
           </div>
         </section>
 
@@ -74,10 +98,18 @@ export default function Home() {
           <p className={styles.sectionText}>
             Know exactly what is safe to remove before you touch production code.
           </p>
-          <a className={styles.primaryButton} href="/signup">
-            Get Started Free
-          </a>
-          <div className={styles.noCard}>No credit card required</div>
+          {isLoggedIn ? (
+            <a className={styles.primaryButton} href="/projects">
+              Go to Projects
+            </a>
+          ) : (
+            <>
+              <a className={styles.primaryButton} href="/signup">
+                Get Started Free
+              </a>
+              <div className={styles.noCard}>No credit card required</div>
+            </>
+          )}
         </section>
       </main>
     </div>

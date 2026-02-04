@@ -42,6 +42,25 @@ export default function Signup() {
 
   return (
     <div className={styles.page}>
+      <a 
+        href="/" 
+        className={styles.homeLink}
+        style={{
+          position: 'fixed',
+          top: '1.5rem',
+          left: '1.5rem',
+          backgroundColor: '#2563eb',
+          color: '#fff',
+          padding: '0.75rem 1.5rem',
+          borderRadius: '6px',
+          textDecoration: 'none',
+          fontWeight: 'bold',
+          zIndex: 9999,
+          border: '2px solid #1d4ed8'
+        }}
+      >
+        ← Home
+      </a>
       <div className={styles.container}>
         <div className={styles.card}>
           <h1 className={styles.title}>Create your account</h1>
