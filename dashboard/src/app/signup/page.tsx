@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './auth.module.css';
+import { API_BASE_URL } from '../../lib/api';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -17,7 +18,7 @@ export default function Signup() {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5000/auth/signup', {
+      const response = await fetch(`${API_BASE_URL}/auth/signup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

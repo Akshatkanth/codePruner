@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import styles from './page.module.css';
+import { API_BASE_URL } from '../../lib/api';
+
+declare global {
+  interface Window {
+    Razorpay?: any;
+  }
+}
 
 interface Endpoint {
   _id: string;
@@ -28,6 +35,16 @@ interface OnboardingProgress {
   isComplete: boolean;
 }
 
+interface UserProfile {
+  email: string;
+  plan: 'free' | 'pro';
+  createdAt: string;
+  usage: {
+    projects: number;
+    endpoints: number;
+  };
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<EndpointData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,6 +56,11 @@ export default function Dashboard() {
   const [onboarding, setOnboarding] = useState<OnboardingProgress | null>(null);
   const [showCredentials, setShowCredentials] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [checkoutReady, setCheckoutReady] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
@@ -54,6 +76,34 @@ export default function Dashboard() {
       setApiKey(savedApiKey);
       setConfigured(true);
     }
+  }, []);
+
+  const loadRazorpayScript = () => new Promise<boolean>((resolve) => {
+    if (document.getElementById('razorpay-checkout-js')) {
+      resolve(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = 'razorpay-checkout-js';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    loadRazorpayScript().then((loaded) => {
+      if (isMounted) {
+        setCheckoutReady(loaded);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const formatRelativeTime = (dateString: string | null) => {
@@ -79,7 +129,7 @@ export default function Dashboard() {
     if (!authToken) return;
 
     try {
-      const response = await fetch('http://localhost:5000/onboarding/progress', {
+      const response = await fetch(`${API_BASE_URL}/onboarding/progress`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -94,6 +144,25 @@ export default function Dashboard() {
     }
   };
 
+  const fetchUserProfile = async () => {
+    if (!authToken) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/user/profile`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setUserProfile(result);
+      }
+    } catch (err) {
+      console.error('Failed to fetch user profile:', err);
+    }
+  };
+
   const fetchEndpoints = async () => {
     if (!projectId || !apiKey || !authToken) return;
 
@@ -101,7 +170,7 @@ export default function Dashboard() {
     setError(null);
 
     try {
-      const response = await fetch(`http://localhost:5000/projects/${projectId}/endpoints`, {
+      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/endpoints`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'X-API-Key': apiKey,
@@ -137,6 +206,57 @@ export default function Dashboard() {
     if (configured) {
       fetchEndpoints();
       fetchOnboardingProgress();
+      fetchUserProfile();
+    }
+  };
+
+  const handleUpgradeCheckout = async () => {
+    if (!authToken) {
+      setUpgradeError('Missing auth token. Please reconfigure your credentials.');
+      return;
+    }
+
+    setUpgradeError(null);
+    setUpgradeLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/billing/subscribe`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to start subscription');
+      }
+
+      if (!checkoutReady || !window.Razorpay || !result?.subscription?.id) {
+        throw new Error('Razorpay checkout is not ready yet');
+      }
+
+      const options = {
+        key: result.razorpayKey,
+        subscription_id: result.subscription.id,
+        name: 'CodePruner Pro',
+        description: 'Unlimited projects and endpoints',
+        prefill: {
+          email: userProfile?.email || '',
+        },
+        theme: {
+          color: '#f59e0b',
+        },
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (err) {
+      setUpgradeError(err instanceof Error ? err.message : 'Upgrade failed');
+    } finally {
+      setUpgradeLoading(false);
     }
   };
 
@@ -144,9 +264,11 @@ export default function Dashboard() {
     if (configured) {
       fetchEndpoints();
       fetchOnboardingProgress();
+      fetchUserProfile();
       const interval = setInterval(() => {
         fetchEndpoints();
         fetchOnboardingProgress();
+        fetchUserProfile();
       }, 30000);
       return () => clearInterval(interval);
     }
@@ -232,7 +354,14 @@ export default function Dashboard() {
     <div className={styles.container}>
       <main className={styles.main}>
         <div className={styles.header}>
-          <h1 className={styles.title}>CodePruner Dashboard</h1>
+          <div className={styles.titleSection}>
+            <h1 className={styles.title}>CodePruner Dashboard</h1>
+            {userProfile && (
+              <div className={`${styles.planBadge} ${styles[`plan-${userProfile.plan}`]}`}>
+                {userProfile.plan === 'pro' ? '⭐ Pro' : 'Free'}
+              </div>
+            )}
+          </div>
           <div className={styles.headerActions}>
             <a href="/" className={styles.buttonSmall}>
               Home
@@ -243,6 +372,11 @@ export default function Dashboard() {
             <button onClick={() => setShowCredentials(!showCredentials)} className={styles.buttonSmall}>
               {showCredentials ? 'Hide Credentials' : 'Show Credentials'}
             </button>
+            {userProfile && userProfile.plan === 'free' && (
+              <button onClick={() => setShowUpgradeModal(true)} className={`${styles.buttonSmall} ${styles.upgradeBtn}`}>
+                ⬆️ Upgrade
+              </button>
+            )}
             <button onClick={() => setConfigured(false)} className={styles.buttonSmall}>
               Change Credentials
             </button>
@@ -414,6 +548,83 @@ export default function Dashboard() {
               </table>
             </div>
           </>
+        )}
+
+        {showUpgradeModal && (
+          <div className={styles.modalOverlay} onClick={() => setShowUpgradeModal(false)}>
+            <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+              <button
+                className={styles.modalClose}
+                onClick={() => setShowUpgradeModal(false)}
+              >
+                ✕
+              </button>
+
+              <div className={styles.modalContent}>
+                <h2 className={styles.modalTitle}>Upgrade to Pro</h2>
+                <p className={styles.modalSubtitle}>Unlock unlimited power for your API management</p>
+
+                <div className={styles.planComparison}>
+                  <div className={styles.planColumn}>
+                    <h3>Free Plan</h3>
+                    <div className={styles.planFeatures}>
+                      <div className={styles.feature}>
+                        <span className={styles.featureIcon}>❌</span>
+                        <span>1 Project</span>
+                      </div>
+                      <div className={styles.feature}>
+                        <span className={styles.featureIcon}>❌</span>
+                        <span>50 Endpoints max</span>
+                      </div>
+                      <div className={styles.feature}>
+                        <span className={styles.featureIcon}>❌</span>
+                        <span>30-day History</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`${styles.planColumn} ${styles.proColumn}`}>
+                    <div className={styles.proBadge}>Most Popular</div>
+                    <h3>Pro Plan</h3>
+                    <div className={styles.planFeatures}>
+                      <div className={styles.feature}>
+                        <span className={styles.featureIcon}>✅</span>
+                        <span>Unlimited Projects</span>
+                      </div>
+                      <div className={styles.feature}>
+                        <span className={styles.featureIcon}>✅</span>
+                        <span>Unlimited Endpoints</span>
+                      </div>
+                      <div className={styles.feature}>
+                        <span className={styles.featureIcon}>✅</span>
+                        <span>90-day History</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={styles.modalFooter}>
+                  <span className={styles.comingSoon}>🔒 Secure checkout powered by Razorpay</span>
+                  {upgradeError && (
+                    <div className={styles.upgradeError}>{upgradeError}</div>
+                  )}
+                  <button
+                    className={`${styles.upgradeButtonModal} ${(!checkoutReady || upgradeLoading) ? styles.upgradeButtonDisabled : ''}`}
+                    onClick={handleUpgradeCheckout}
+                    disabled={!checkoutReady || upgradeLoading}
+                  >
+                    {upgradeLoading ? 'Starting Checkout...' : 'Upgrade to Pro - ₹1000/mo'}
+                  </button>
+                  <button
+                    className={styles.buttonSecondary}
+                    onClick={() => setShowUpgradeModal(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>

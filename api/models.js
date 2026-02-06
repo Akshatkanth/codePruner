@@ -154,6 +154,11 @@ const userSchema = new mongoose.Schema(
       default: 'free',
       index: true
     },
+    razorpaySubscriptionId: {
+      type: String,
+      default: null,
+      index: true
+    },
     emailVerified: {
       type: Boolean,
       default: false

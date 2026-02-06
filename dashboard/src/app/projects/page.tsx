@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './projects.module.css';
+import { API_BASE_URL } from '../../lib/api';
 
 interface Project {
   id: string;
@@ -37,7 +38,7 @@ export default function Projects() {
     if (!token) return;
 
     try {
-      const response = await fetch('http://localhost:5000/projects', {
+      const response = await fetch(`${API_BASE_URL}/projects`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -66,7 +67,7 @@ export default function Projects() {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5000/projects', {
+      const response = await fetch(`${API_BASE_URL}/projects`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

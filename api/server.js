@@ -3,12 +3,14 @@
  * Ingests endpoint usage logs from SDK
  */
 
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
+const Razorpay = require('razorpay');
 const connectDB = require('./db');
 const validateAPIKey = require('./middleware');
 const { EndpointLog, EndpointStatus, User, Project } = require('./models');
@@ -18,9 +20,15 @@ const authMiddleware = require('./auth-middleware');
 
 const app = express();
 
+// Initialize Razorpay client
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
+
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 20 * 60 * 1000, // 15 minutes
   max: 5, // 5 requests per window
   message: { error: 'Too many attempts, please try again later' },
   standardHeaders: true,
@@ -58,8 +66,14 @@ app.use((req, res, next) => {
 // Apply general rate limiting to all routes
 app.use(generalLimiter);
 
+const rawBodySaver = (req, res, buf) => {
+  if (req.originalUrl === '/billing/webhook') {
+    req.rawBody = buf.toString();
+  }
+};
+
 // Middleware
-app.use(express.json({ limit: '10mb' })); // Support larger payloads
+app.use(express.json({ limit: '10mb', verify: rawBodySaver })); // Support larger payloads
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Connect to MongoDB on startup
@@ -235,11 +249,9 @@ app.post('/auth/forgot-password', authLimiter, async (req, res) => {
     });
 
     // In production: Send email with resetToken
-    // For now, return token in response (remove in production!)
     res.json({
       success: true,
-      message: 'If the email exists, a reset link will be sent',
-      resetToken // REMOVE THIS IN PRODUCTION
+      message: 'If the email exists, a reset link will be sent'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -336,6 +348,50 @@ app.get('/onboarding/progress', authMiddleware, async (req, res) => {
 
   } catch (error) {
     console.error('Onboarding progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /user/profile
+ * Get current user's profile information
+ */
+app.get('/user/profile', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const user = await User.findById(userId).select('email plan createdAt');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get project count and endpoint count for limits display
+    const projectCount = await Project.countDocuments({ owner: userId, active: true });
+    
+    let totalUniqueEndpoints = 0;
+    if (projectCount > 0) {
+      const userProjects = await Project.find({ owner: userId, active: true }).select('_id');
+      const projectIds = userProjects.map(p => p._id);
+      const endpointCounts = await Promise.all(
+        projectIds.map(projectId => 
+          EndpointLog.distinct('route', { projectId }).then(routes => routes.length)
+        )
+      );
+      totalUniqueEndpoints = endpointCounts.reduce((sum, count) => sum + count, 0);
+    }
+
+    res.json({
+      email: user.email,
+      plan: user.plan,
+      createdAt: user.createdAt,
+      usage: {
+        projects: projectCount,
+        endpoints: totalUniqueEndpoints
+      }
+    });
+
+  } catch (error) {
+    console.error('User profile error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -759,6 +815,112 @@ app.delete('/projects/:projectId', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Delete project error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 404 handler
+/**
+ * POST /billing/subscribe
+ * Create a Razorpay subscription for the user
+ */
+app.post('/billing/subscribe', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user is already subscribed
+    if (user.razorpaySubscriptionId) {
+      return res.status(400).json({ error: 'User already has an active subscription' });
+    }
+
+    // Create subscription via Razorpay
+    const subscription = await razorpay.subscriptions.create({
+      plan_id: process.env.RAZORPAY_PLAN_ID,
+      customer_notify: 1,
+      quantity: 1,
+      total_count: 12, // Annual subscription
+    });
+
+    // Store subscription ID on user
+    user.razorpaySubscriptionId = subscription.id;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Subscription created successfully',
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        plan_id: subscription.plan_id,
+      },
+      // Return Razorpay key for checkout
+      razorpayKey: process.env.RAZORPAY_KEY_ID,
+    });
+  } catch (error) {
+    console.error('Subscription creation error:', error);
+    res.status(500).json({ error: 'Failed to create subscription' });
+  }
+});
+
+/**
+ * POST /billing/webhook
+ * Handle Razorpay webhook events
+ */
+app.post('/billing/webhook', async (req, res) => {
+  try {
+    const signature = req.headers['x-razorpay-signature'];
+    const body = req.rawBody || JSON.stringify(req.body || {});
+
+    // Verify webhook signature
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+      .update(body)
+      .digest('hex');
+
+    if (signature !== expectedSignature) {
+      console.warn('Invalid webhook signature');
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+
+    const event = JSON.parse(body);
+
+    // Handle subscription.activated event
+    if (event.event === 'subscription.activated') {
+      const subscriptionId = event.payload.subscription.entity.id;
+
+      // Find user by subscription ID
+      const user = await User.findOne({ razorpaySubscriptionId: subscriptionId });
+
+      if (user) {
+        // Upgrade to pro plan
+        user.plan = 'pro';
+        await user.save();
+        console.log(`✅ User ${user.email} upgraded to pro plan`);
+      }
+    }
+
+    // Handle subscription.cancelled event (optional)
+    if (event.event === 'subscription.cancelled') {
+      const subscriptionId = event.payload.subscription.entity.id;
+      const user = await User.findOne({ razorpaySubscriptionId: subscriptionId });
+
+      if (user) {
+        // Downgrade to free plan
+        user.plan = 'free';
+        user.razorpaySubscriptionId = null;
+        await user.save();
+        console.log(`📉 User ${user.email} downgraded to free plan`);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
