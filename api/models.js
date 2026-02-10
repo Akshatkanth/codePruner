@@ -18,11 +18,17 @@ const projectSchema = new mongoose.Schema(
       required: true,
       index: true
     },
-    apiKey: {
+    apiKeyHash: {
       type: String,
       required: true,
       unique: true,
       index: true
+    },
+    // Deprecated: retained only to migrate legacy plaintext keys safely.
+    apiKey: {
+      type: String,
+      required: false,
+      select: false
     },
     apiSecret: {
       type: String,

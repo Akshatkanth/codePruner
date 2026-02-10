@@ -93,6 +93,17 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+const isProjectOwnedByUser = (req, projectId) => {
+  if (!req.project || !req.project._id || !req.project.owner || !req.user?.userId) {
+    return false;
+  }
+
+  return (
+    req.project._id.toString() === projectId &&
+    req.project.owner.toString() === req.user.userId
+  );
+};
+
 /**
  * POST /auth/signup
  * Create a new user
@@ -494,7 +505,7 @@ app.get('/projects/:projectId/endpoints', authMiddleware, validateAPIKey, async 
     const projectId = req.params.projectId;
 
     // Verify project ownership
-    if (req.project._id.toString() !== projectId) {
+    if (!isProjectOwnedByUser(req, projectId)) {
       return res.status(403).json({
         error: 'Unauthorized'
       });
@@ -544,7 +555,7 @@ app.get('/projects/:projectId/endpoints/status/:statusType', authMiddleware, val
     const statusType = req.params.statusType.toLowerCase();
 
     // Verify project ownership
-    if (req.project._id.toString() !== projectId) {
+    if (!isProjectOwnedByUser(req, projectId)) {
       return res.status(403).json({
         error: 'Unauthorized'
       });
@@ -591,7 +602,7 @@ app.get('/projects/:projectId/endpoints/summary', authMiddleware, validateAPIKey
     const projectId = req.params.projectId;
 
     // Verify project ownership
-    if (req.project._id.toString() !== projectId) {
+    if (!isProjectOwnedByUser(req, projectId)) {
       return res.status(403).json({
         error: 'Unauthorized'
       });
@@ -639,7 +650,7 @@ app.get('/analysis/:projectId', authMiddleware, validateAPIKey, async (req, res)
     const projectId = req.params.projectId;
 
     // Verify project ownership
-    if (req.project._id.toString() !== projectId) {
+    if (!isProjectOwnedByUser(req, projectId)) {
       return res.status(403).json({
         error: 'Unauthorized'
       });
@@ -679,7 +690,7 @@ app.post('/analysis/run-now/:projectId', authMiddleware, validateAPIKey, async (
     const projectId = req.params.projectId;
 
     // Verify project ownership
-    if (req.project._id.toString() !== projectId) {
+    if (!isProjectOwnedByUser(req, projectId)) {
       return res.status(403).json({
         error: 'Unauthorized'
       });
@@ -735,12 +746,13 @@ app.post('/projects', authMiddleware, async (req, res) => {
 
     // Generate secure API key and secret
     const apiKey = 'cp_' + crypto.randomBytes(32).toString('hex');
+    const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
     const apiSecret = crypto.randomBytes(32).toString('hex');
 
     const project = await Project.create({
       name: name.trim(),
       owner: userId,
-      apiKey,
+      apiKeyHash,
       apiSecret,
       description: description || '',
       active: true
@@ -751,7 +763,7 @@ app.post('/projects', authMiddleware, async (req, res) => {
       project: {
         id: project._id,
         name: project.name,
-        apiKey: project.apiKey,
+        apiKey,
         description: project.description,
         createdAt: project.createdAt
       }
@@ -771,7 +783,7 @@ app.get('/projects', authMiddleware, async (req, res) => {
     const userId = req.user.userId;
 
     const projects = await Project.find({ owner: userId, active: true })
-      .select('name apiKey description createdAt')
+      .select('name description createdAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -780,7 +792,7 @@ app.get('/projects', authMiddleware, async (req, res) => {
       projects: projects.map(p => ({
         id: p._id,
         name: p.name,
-        apiKey: p.apiKey,
+        apiKey: null,
         description: p.description,
         createdAt: p.createdAt
       }))

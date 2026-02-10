@@ -46,6 +46,14 @@ npm run build
 npm start
 ```
 
+## ☁️ Deploy to Netlify
+
+1. Create a new site in Netlify and select the repo.
+2. Set the base directory to `dashboard`.
+3. Build command: `npm run build`
+4. Publish directory: `.next`
+5. Add environment variable `NEXT_PUBLIC_API_BASE_URL` (the backend base URL).
+
 ## 📝 Requirements
 
 - Node.js 18+

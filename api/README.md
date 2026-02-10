@@ -182,7 +182,7 @@ Authorization: Bearer <API_KEY>
 
 ### Indexes
 
-- `projects.apiKey` - For API key lookup
+- `projects.apiKeyHash` - For API key lookup (SHA-256 hash)
 - `endpointlogs.projectId + route` - For querying endpoints
 - `endpointlogs.projectId + timestamp` - For time-based queries
 

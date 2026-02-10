@@ -8,7 +8,7 @@ import { API_BASE_URL } from '../../lib/api';
 interface Project {
   id: string;
   name: string;
-  apiKey: string;
+  apiKey?: string | null;
   description: string;
   createdAt: string;
 }
@@ -86,6 +86,11 @@ export default function Projects() {
       }
 
       setProjects([data.project, ...projects]);
+      if (data.project?.apiKey) {
+        localStorage.setItem(`apiKey:${data.project.id}`, data.project.apiKey);
+        localStorage.setItem('currentApiKey', data.project.apiKey);
+        localStorage.setItem('currentProjectId', data.project.id);
+      }
       setShowCreateForm(false);
       setNewProjectName('');
       setNewProjectDescription('');
@@ -100,6 +105,10 @@ export default function Projects() {
     navigator.clipboard.writeText(text);
     setCopiedKey(projectId);
     setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const getStoredApiKey = (projectId: string) => {
+    return localStorage.getItem(`apiKey:${projectId}`) || '';
   };
 
   const handleLogout = () => {
@@ -222,10 +231,13 @@ export default function Projects() {
                 <div className={styles.apiKeySection}>
                   <label>API Key</label>
                   <div className={styles.apiKeyDisplay}>
-                    <code className={styles.apiKey}>{project.apiKey}</code>
+                    <code className={styles.apiKey}>
+                      {project.apiKey || (getStoredApiKey(project.id) ? 'Saved locally' : 'Hidden')}
+                    </code>
                     <button
-                      onClick={() => copyToClipboard(project.apiKey, project.id)}
+                      onClick={() => copyToClipboard(project.apiKey || getStoredApiKey(project.id), project.id)}
                       className={styles.copyButton}
+                      disabled={!project.apiKey && !getStoredApiKey(project.id)}
                     >
                       {copiedKey === project.id ? '✓ Copied' : 'Copy'}
                     </button>
@@ -235,8 +247,15 @@ export default function Projects() {
                 <div className={styles.projectActions}>
                   <button
                     onClick={() => {
+                      const storedKey = getStoredApiKey(project.id);
+                      if (project.apiKey) {
+                        localStorage.setItem(`apiKey:${project.id}`, project.apiKey);
+                        localStorage.setItem('currentApiKey', project.apiKey);
+                      } else if (storedKey) {
+                        localStorage.setItem('currentApiKey', storedKey);
+                      }
+
                       localStorage.setItem('currentProjectId', project.id);
-                      localStorage.setItem('currentApiKey', project.apiKey);
                       router.push('/dashboard');
                     }}
                     className={styles.viewDashboardButton}

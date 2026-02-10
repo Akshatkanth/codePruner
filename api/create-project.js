@@ -19,11 +19,12 @@ async function createTestProject() {
 
     // Generate API key and secret
     const apiKey = 'cp_' + crypto.randomBytes(32).toString('hex');
+    const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
     const apiSecret = crypto.randomBytes(32).toString('hex');
 
     const project = new Project({
       name: 'Test Project',
-      apiKey,
+      apiKeyHash,
       apiSecret,
       description: 'Created for testing CodePruner SDK',
       active: true
