@@ -1,8 +1,21 @@
 {
-  "name": "codepruner-sdk",
+  "name": "codepruner",
   "version": "1.0.0",
   "description": "Lightweight SDK to detect unused API endpoints in Express applications",
   "main": "middleware.js",
+  "files": [
+    "middleware.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Akshatkanth/codePruner"
+  },
+  "homepage": "https://github.com/Akshatkanth/codePruner",
+  "bugs": {
+    "url": "https://github.com/Akshatkanth/codePruner/issues"
+  },
   "scripts": {
     "start": "node app.js",
     "dev": "NODE_ENV=development node app.js",
@@ -15,10 +28,12 @@
     "express-middleware",
     "monitoring"
   ],
-  "author": "",
+  "author": "Akshat Kanth",
   "license": "MIT",
   "dependencies": {
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
     "express": "^4.18.2"
   },
   "engines": {
