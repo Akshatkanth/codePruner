@@ -13,14 +13,14 @@ Lightweight Node.js SDK for tracking API endpoint usage in Express applications.
 ## 📦 Installation
 
 ```bash
-npm install express
+npm install codepruner
 ```
 
 ## 🔧 Quick Start
 
 ```javascript
 const express = require('express');
-const CodePruner = require('./middleware');
+const CodePruner = require('codepruner');
 
 const app = express();
 
