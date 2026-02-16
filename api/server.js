@@ -44,16 +44,19 @@ const generalLimiter = rateLimit({
 });
 
 // CORS Middleware with whitelist
+const normalizeOrigin = (origin) => origin.trim().replace(/\/+$/, '');
+
 const allowedOrigins = (process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',')
   : ['https://codepruner.netlify.app']
-).map((origin) => origin.trim()).filter(Boolean);
+).map(normalizeOrigin).filter(Boolean);
 
 const corsHandler = (req, res, next) => {
-  const origin = req.headers.origin;
+  const rawOrigin = req.headers.origin;
+  const origin = rawOrigin ? normalizeOrigin(rawOrigin) : '';
 
   if (origin && allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Origin', rawOrigin);
     res.header('Vary', 'Origin');
   }
 
