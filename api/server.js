@@ -44,24 +44,31 @@ const generalLimiter = rateLimit({
 });
 
 // CORS Middleware with whitelist
-app.use((req, res, next) => {
-  const allowedOrigins = process.env.CORS_ORIGINS 
-    ? process.env.CORS_ORIGINS.split(',') 
-    : ['http://localhost:3000'];
-  
+const allowedOrigins = (process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : ['https://codepruner.netlify.app']
+).map((origin) => origin.trim()).filter(Boolean);
+
+const corsHandler = (req, res, next) => {
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
+
+  if (origin && allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
   }
-  
+
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
-  
+
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
+
   next();
-});
+};
+
+app.use(corsHandler);
+app.options('*', corsHandler);
 
 // Apply general rate limiting to all routes
 app.use(generalLimiter);
