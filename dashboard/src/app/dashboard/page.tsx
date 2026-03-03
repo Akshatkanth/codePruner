@@ -366,6 +366,9 @@ export default function Dashboard() {
             <a href="/" className={styles.buttonSmall}>
               Home
             </a>
+            <a href="/support" className={styles.buttonSmall}>
+              Support
+            </a>
             <button onClick={handleRefreshNow} className={styles.buttonSmall}>
               🔄 Refresh
             </button>

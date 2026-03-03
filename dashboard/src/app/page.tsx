@@ -106,6 +106,7 @@ export default function Home() {
           <nav className={styles.nav}>
             <a href="#features" className={styles.navLink}>Features</a>
             <a href="#pricing" className={styles.navLink}>Pricing</a>
+            <a href="/support" className={styles.navLink}>Support</a>
           </nav>
         </div>
         {isLoggedIn ? (

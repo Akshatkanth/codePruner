@@ -138,6 +138,9 @@ export default function Projects() {
             <button onClick={() => router.push('/')} className={styles.secondaryButton}>
               Home
             </button>
+            <button onClick={() => router.push('/support')} className={styles.secondaryButton}>
+              Support
+            </button>
             <button onClick={() => router.push('/dashboard')} className={styles.secondaryButton}>
               Dashboard
             </button>
