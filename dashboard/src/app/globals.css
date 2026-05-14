@@ -27,11 +27,13 @@ body {
   --primary-600: #1d4ed8;
   --accent-start: #60a5fa;
   --accent-end: #a78bfa;
+  --site-max-width: 1400px;
+  --page-padding: 1.25rem;
 }
 
 html, body {
   height: 100%;
-  font-size: 16px; /* ensure consistent scaling */
+  font-size: 18px; /* slightly larger base for desktop readability */
 }
 
 a {
@@ -66,4 +68,29 @@ html {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #1d4ed8;
+}
+
+/* Layout helpers to ensure consistent sizing */
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-900);
+}
+
+.main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--site-max-width);
+  margin: 0 auto;
+  padding: calc(var(--page-padding) * 1.5);
+  box-sizing: border-box;
+}
+
+.container {
+  width: 100%;
+  max-width: var(--site-max-width);
+  margin: 0 auto;
+  padding: 0 1rem;
+  box-sizing: border-box;
 }
