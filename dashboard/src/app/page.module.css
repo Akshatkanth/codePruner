@@ -142,18 +142,21 @@
 }
 
 .main {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2rem 2.5rem;
   display: flex;
   flex-direction: column;
-  gap: 5rem;
+  gap: 4.5rem;
 }
 
 .hero {
+  width: 100%;
   padding: 4rem 0 2rem;
   position: relative;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .heroGradient {
