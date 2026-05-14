@@ -103,21 +103,19 @@ export default function Home() {
       <header className={styles.header}>
         <div className={styles.headerContent}>
           <div className={styles.brand}>🔍 CodePruner</div>
-          <nav className={styles.nav}>
-            <a href="#features" className={styles.navLink}>Features</a>
-            <a href="#pricing" className={styles.navLink}>Pricing</a>
-            <a href="/support" className={styles.navLink}>Support</a>
-          </nav>
+          <div className={styles.headerActions}>
+            <nav className={styles.nav}>
+              <a href="#features" className={styles.navLink}>Features</a>
+              <a href="#pricing" className={styles.navLink}>Pricing</a>
+              <a href="/support" className={styles.navLink}>Support</a>
+            </nav>
+            {isLoggedIn ? (
+              <a className={styles.headerCta} href="/projects">Go to Projects</a>
+            ) : (
+              <a className={styles.headerCta} href="/signup">Get Started Free</a>
+            )}
+          </div>
         </div>
-        {isLoggedIn ? (
-          <a className={styles.headerCta} href="/projects">
-            Go to Projects
-          </a>
-        ) : (
-          <a className={styles.headerCta} href="/signup">
-            Get Started Free
-          </a>
-        )}
       </header>
 
       <main className={styles.main}>

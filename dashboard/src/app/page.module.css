@@ -46,10 +46,16 @@
   animation: fadeInUp 0.8s ease-out;
 }
 
+/* Reserve space for sticky header to avoid overlap */
+.page {
+  padding-top: var(--header-height, 72px);
+}
+
 .header {
   width: 100%;
   padding: 0.6rem 0;
   display: block;
+  --header-height: 72px;
   border-bottom: 1px solid rgba(96, 165, 250, 0.06);
   backdrop-filter: blur(12px);
   position: sticky;
@@ -67,6 +73,11 @@
   margin: 0 auto;
   padding: 0 1rem;
   justify-content: space-between;
+}
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
 }
 
 .brand {
