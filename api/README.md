@@ -48,6 +48,22 @@ npm run dev
 
 Server will be running on `http://localhost:5000`
 
+## ☁️ Deploy to Render
+
+1. Create a new Render Web Service from this repository.
+2. Set the root directory to `api`, or import the included `render.yaml` blueprint.
+3. Build command: `npm ci`
+4. Start command: `npm start`
+5. Add these environment variables in Render:
+  - `MONGODB_URI`
+  - `JWT_SECRET`
+  - `RAZORPAY_KEY_ID`
+  - `RAZORPAY_KEY_SECRET`
+  - `CORS_ORIGINS`
+
+Set `CORS_ORIGINS` to your full Netlify site URL, for example `https://your-site.netlify.app`.
+Render injects `PORT` automatically, and the server already listens on `process.env.PORT`.
+
 ## 📡 API Endpoints
 
 ### Health Check

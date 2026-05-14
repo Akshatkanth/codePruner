@@ -52,19 +52,19 @@ npm start
 2. Set the base directory to `dashboard`.
 3. Build command: `npm run build`
 4. Publish directory: `.next`
-5. Add environment variable `NEXT_PUBLIC_API_BASE_URL` (the backend base URL).
+5. Add environment variable `NEXT_PUBLIC_API_BASE_URL` and set it to your Render backend URL.
 
 ## 📝 Requirements
 
 - Node.js 18+
-- CodePruner API running on port 5000
+- CodePruner API available at your Render URL
 - Valid Project ID and API Key
 
 ## 🔗 API Endpoint
 
 Dashboard fetches from:
 ```
-GET http://localhost:5000/projects/:projectId/endpoints
+GET https://your-render-service.onrender.com/projects/:projectId/endpoints
 ```
 
 ## 🛠️ Tech Stack
